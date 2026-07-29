@@ -1,0 +1,55 @@
+# TFM AquaControl S.A. - Arquitectura CORREGIDA
+# Segundo laboratorio independiente (no sustituye al deficiente).
+# Demuestra la remediacion: Kali ya NO esta conectado a red_ot directamente.
+# Solo puede llegar a OpenPLC a traves del contenedor "conducto",
+# que unicamente reenvia el puerto de gestion web (8080), nunca el 502.
+
+networks:
+  red_it:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+  red_ot:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.0.0/24
+
+services:
+
+  openplc:
+    image: tuttas/openplc_v3:latest
+    container_name: openplc-corregido
+    restart: unless-stopped
+    networks:
+      red_ot:
+        ipv4_address: 172.31.0.10
+    # Sin publicar puertos al host: en este laboratorio el unico acceso
+    # valido es a traves del conducto, ni siquiera desde el propio host.
+
+  conducto:
+    build: ./conducto
+    container_name: conducto
+    restart: unless-stopped
+    networks:
+      red_it:
+        ipv4_address: 172.30.0.20
+      red_ot:
+        ipv4_address: 172.31.0.20
+
+  kali:
+    image: nicolaka/netshoot
+    container_name: kali-corregido
+    tty: true
+    stdin_open: true
+    restart: unless-stopped
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    networks:
+      red_it:
+        ipv4_address: 172.30.0.50
+    # Nota: Kali ya NO tiene interfaz en red_ot. Representa un atacante
+    # que compromete un puesto de la red IT pero NO ha logrado saltar
+    # a la red OT gracias a la segmentacion + conducto controlado.

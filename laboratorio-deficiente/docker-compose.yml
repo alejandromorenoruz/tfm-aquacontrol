@@ -1,0 +1,101 @@
+# TFM AquaControl S.A. - Laboratorio ICS/SCADA
+# Redes IT/OT separadas + firewall lógico (ver diagrama de arquitectura corregida)
+# Probar SIEMPRE en un ordenador distinto al propio antes de entregar.
+
+networks:
+  red_it:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+  red_ot:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/24
+
+services:
+
+  openplc:
+    image: tuttas/openplc_v3:latest
+    # Login web: usuario "openplc", contraseña "openplc"
+    container_name: openplc
+    hostname: openplc
+    restart: unless-stopped
+    networks:
+      red_ot:
+        ipv4_address: 172.21.0.10
+    ports:
+      - "8080:8080"   # interfaz web de gestión
+      - "502:502"     # Modbus TCP (vector de ataque)
+
+  conpot:
+    image: honeynet/conpot:latest
+    container_name: conpot
+    hostname: conpot
+    restart: unless-stopped
+    networks:
+      red_ot:
+        ipv4_address: 172.21.0.11
+    ports:
+      - "8800:8800"
+
+  modbus-sensor:
+    build: ./modbus-sensor
+    container_name: modbus-sensor
+    restart: unless-stopped
+    depends_on:
+      - openplc
+    network_mode: "service:openplc"   # comparte la interfaz de red de OpenPLC
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+
+  wazuh.manager:
+    image: wazuh/wazuh-manager:4.9.0
+    container_name: wazuh.manager
+    hostname: wazuh-manager
+    restart: unless-stopped
+    networks:
+      red_it:
+        ipv4_address: 172.20.0.10
+      red_ot:
+        ipv4_address: 172.21.0.20
+    ports:
+      - "1514:1514/udp"   # agentes
+      - "1515:1515"       # registro de agentes
+      - "55000:55000"     # API REST (útil para consultar alertas sin dashboard)
+    volumes:
+      - wazuh_etc:/var/ossec/etc
+      - wazuh_logs:/var/ossec/logs
+      - wazuh_queue:/var/ossec/queue
+      - wazuh_var_multigroups:/var/ossec/var/multigroups
+      - wazuh_integrations:/var/ossec/integrations
+      - wazuh_active_response:/var/ossec/active-response/bin
+      - wazuh_wodles:/var/ossec/wodles
+
+  kali:
+    build: ./kali
+    container_name: kali
+    hostname: kali
+    tty: true
+    stdin_open: true
+    restart: unless-stopped
+    command: /bin/bash
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    networks:
+      red_it:
+        ipv4_address: 172.20.0.50   # atacante ya "dentro" de IT...
+      red_ot:
+        ipv4_address: 172.21.0.50   # ...con acceso directo a OT (deficiencia inicial)
+
+volumes:
+  wazuh_etc:
+  wazuh_logs:
+  wazuh_queue:
+  wazuh_var_multigroups:
+  wazuh_integrations:
+  wazuh_active_response:
+  wazuh_wodles:
